@@ -17,7 +17,9 @@ void Drive::setLadoIzquierdo(int velocidad) {
 }
 
 void Drive::setLadoDerecho(int velocidad) {
-    int velocidad_ajustada = (int)(velocidad * MULTIPLICADOR_LADO_DERECHO);
+    int velocidad_ajustada = ES_MECANUM
+        ? velocidad
+        : (int)(velocidad * MULTIPLICADOR_LADO_DERECHO);
     del_der.set(velocidad_ajustada);
     tra_der.set(velocidad_ajustada);
 }
@@ -42,10 +44,8 @@ void Drive::girarSobreEje(int velocidad) {
     del_izq.set(-velocidad);
     tra_izq.set(velocidad);
 #else
-    const int velocidad_derecha = (int)(velocidad * MULTIPLICADOR_LADO_DERECHO);
-
-    del_der.set(velocidad_derecha);
-    tra_der.set(-velocidad_derecha);
+    del_der.set(velocidad);
+    tra_der.set(-velocidad);
     del_izq.set(-velocidad);
     tra_izq.set(velocidad);
 #endif
@@ -56,11 +56,14 @@ void Drive::detener() {
 }
 
 void Drive::aplicar(float fl, float fr, float rl, float rr) {
-    fr *= MULTIPLICADOR_LADO_DERECHO;
-    rr *= MULTIPLICADOR_LADO_DERECHO;
+    if (!ES_MECANUM) {
+        fr *= MULTIPLICADOR_LADO_DERECHO;
+        rr *= MULTIPLICADOR_LADO_DERECHO;
+    }
 
-    float mayor = max(max(abs(fl), abs(fr)), max(abs(rl), abs(rr)));
-    float escala = (mayor > 255.0) ? (255.0 / mayor) : 1.0;
+    const float mayor = max(max(fabs(fl), fabs(fr)),
+                            max(fabs(rl), fabs(rr)));
+    const float escala = mayor > 255.0f ? 255.0f / mayor : 1.0f;
 
     del_izq.set((int)(fl * escala));
     del_der.set((int)(fr * escala));
@@ -78,12 +81,19 @@ void Drive::mover(int vx, int vy, int giro) {
         return;
     }
 
-    float lateral = (float)vy * STRAFE_SIGNO;
+#if defined(PISTA_B)
+    const float fl = vx - vy - giro;
+    const float fr = -vx - vy + giro;
+    const float rl = vx - vy + giro;
+    const float rr = -vx - vy - giro;
+#else
+    const float lateral = (float)vy * STRAFE_SIGNO;
 
-    float fl = vx + lateral - giro;
-    float fr = vx - lateral + giro;
-    float rl = vx - lateral - giro;
-    float rr = vx + lateral + giro;
+    const float fl = vx + lateral - giro;
+    const float fr = vx - lateral + giro;
+    const float rl = vx - lateral - giro;
+    const float rr = vx + lateral + giro;
+#endif
 
     aplicar(fl, fr, rl, rr);
 }

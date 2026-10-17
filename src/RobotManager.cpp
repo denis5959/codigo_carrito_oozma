@@ -66,14 +66,16 @@ float RobotManager::calcularErrorAngular(float objetivo, float actual) const {
 }
 
 bool RobotManager::actualizar() {
-    if (!mpu.actualizar()) {
-        Serial.println(F("Error leyendo MPU en canal I2C 5, direccion 0x68; motores detenidos."));
-        oled.mostrarError(F("MPU: revisar I2C"));
-        drive.detener();
-        delay(500);
-        return false;
+    for (uint8_t intento = 0; intento < 3; intento++) {
+        if (mpu.actualizar()) return true;
+        delayMicroseconds(500);
     }
-    return true;
+
+    Serial.println(F("Error leyendo MPU en canal I2C 5, direccion 0x68 tras 3 intentos; motores detenidos."));
+    oled.mostrarError(F("MPU: revisar I2C"));
+    drive.detener();
+    delay(100);
+    return false;
 }
 
 void RobotManager::terminarCiclo() {

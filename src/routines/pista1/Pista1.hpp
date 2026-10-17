@@ -18,8 +18,8 @@ private:
         ESPERA_ANALISIS,
         GIRANDO,
         AVANZANDO,
+        CONFIRMANDO_NODO,
         RETROCEDIENDO_OBSTACULO,
-        PAUSA_COLOR,
         PAUSA_META_FINAL,
         META,
         SIN_RUTA
@@ -37,9 +37,7 @@ private:
         RUTA_A_META,
         RUTA_A_INICIO
     };
-
     Estado estado;
-    Estado estado_antes_pausa;
     Fase fase;
     TipoMovimiento tipo_movimiento;
     UltrasonicSensor sensor_frente;
@@ -69,7 +67,8 @@ private:
     uint8_t longitud_ruta_meta;
     uint8_t indice_ruta;
     uint16_t numero_casilla;
-    uint16_t colores_detectados;
+    uint8_t marcadores_azules_detectados;
+    uint8_t marcadores_naranjas_detectados;
     bool meta_encontrada;
 
     unsigned long inicio_movimiento;
@@ -80,9 +79,19 @@ private:
     unsigned long inicio_retroceso_obstaculo;
     unsigned long duracion_retroceso_obstaculo;
     unsigned long tiempo_ultima_lectura;
+    uint8_t lecturas_inclinacion_altas;
+    uint8_t lecturas_pared_frente;
+    uint8_t lecturas_ir_activas;
+    uint8_t lecturas_ir_libres;
+    float distancia_frente_actual;
+    bool nodo_detectado_actual;
+    bool speedbump_detectado;
+    bool color_pendiente_casilla;
+    ColorDetectado color_casilla;
     bool regreso_obstaculo_pendiente;
 
     void analizarCasilla(RobotManager &robot);
+    void continuarPasillo(RobotManager &robot);
     void iniciarMovimiento(RobotManager &robot, uint8_t direccion, TipoMovimiento tipo);
     void iniciarRetornoPorObstaculo(RobotManager &robot, unsigned long ahora);
     void iniciarAvance(RobotManager &robot);

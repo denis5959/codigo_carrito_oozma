@@ -4,15 +4,16 @@
 #include "constants/pinsConfig.h"
 
 namespace {
-const float DISTANCIA_SEGURIDAD_CM = 12.0;
+const float DISTANCIA_SEGURIDAD_CM = 18.0;
 const float UMBRAL_PARED_FRENTE_CM = 20.0;
 const float UMBRAL_PARED_LADO_CM = 12.0;
+const uint8_t LECTURAS_PARED_CONFIRMACION = 2;
 const int VELOCIDAD_AVANCE = 42;
-const int CORRECCION_RUMBO_MAXIMA = 7;
-const unsigned long TIEMPO_CASILLA_MS = 1750;
+const unsigned long TIEMPO_UNIDAD_MS = 1100;
 const unsigned long TIEMPO_MAXIMO_CASILLA_MS = 6000;
-const unsigned long TIEMPO_FRENADO_MS = 300;
-const unsigned long TIEMPO_PAUSA_COLOR_MS = 5000;
+const float INCLINACION_UMBRAL_SPEEDBUMP_GRADOS = 8.0;
+const uint8_t LECTURAS_SPEEDBUMP_CONFIRMACION = 5;
+const uint8_t LECTURAS_IR_CONFIRMACION = 3;
 const unsigned long TIEMPO_PAUSA_META_MS = 5000;
 const unsigned long TIEMPO_ESTABILIZAR_CASILLA_MS = 800;
 const unsigned long INTERVALO_ULTRASONICO_MS = 100;
@@ -41,40 +42,21 @@ float mediana3(float a, float b, float c) {
     return b;
 }
 
-int velocidadAvance(unsigned long transcurrido, unsigned long duracion,
-                    bool frenarSuave) {
-    if (duracion == 0 || transcurrido >= duracion) return 0;
-    if (!frenarSuave) return VELOCIDAD_AVANCE;
-
-    const unsigned long tiempo_frenado =
-        duracion < TIEMPO_FRENADO_MS ? duracion : TIEMPO_FRENADO_MS;
-    const unsigned long inicio_frenado = duracion - tiempo_frenado;
-    if (transcurrido < inicio_frenado) return VELOCIDAD_AVANCE;
-
-    const unsigned long restante = duracion - transcurrido;
-    return (int)((VELOCIDAD_AVANCE * restante) / tiempo_frenado);
-}
-
-void avanzarConCorreccion(RobotManager &robot, unsigned long transcurrido,
-                          unsigned long duracion, bool frenarSuave) {
-    const int velocidad =
-        velocidadAvance(transcurrido, duracion, frenarSuave);
-    if (velocidad == 0) {
+void avanzarUnidad(RobotManager &robot, unsigned long transcurrido,
+                   unsigned long duracion) {
+    if (duracion == 0 || transcurrido >= duracion) {
         robot.drive.detener();
         return;
     }
 
-    const float proporcion = (float)velocidad / VELOCIDAD_AVANCE;
-    const int giro = (int)(robot.correccionRumbo(CORRECCION_RUMBO_MAXIMA) *
-                           proporcion);
-    robot.drive.mover(velocidad, 0, giro);
+    robot.drive.avanzar(VELOCIDAD_AVANCE);
 }
 
 float medirFiltrado(UltrasonicSensor &sensor) {
     float a = sensor.medirCm(18000UL);
-    delay(25);
+    delay(60);
     float b = sensor.medirCm(18000UL);
-    delay(25);
+    delay(60);
     float c = sensor.medirCm(18000UL);
 
     if (a == 0.0) a = 999.0;
@@ -83,29 +65,34 @@ float medirFiltrado(UltrasonicSensor &sensor) {
     return mediana3(a, b, c);
 }
 
-bool esColorMarcador(ColorDetectado color) {
-    return color == ColorDetectado::CIAN ||
-           color == ColorDetectado::MAGENTA ||
-           color == ColorDetectado::AMARILLO ||
-           color == ColorDetectado::NARANJA;
+float medirFrenteEnMovimiento(UltrasonicSensor &sensor) {
+    const float distancia = sensor.medirCm(18000UL);
+    return distancia > 0.0 ? distancia : 999.0;
 }
 }
 
 Pista1::Pista1()
-    : estado(ANALIZANDO), estado_antes_pausa(ANALIZANDO),
-      fase(EXPLORANDO), tipo_movimiento(AVANCE_EXPLORACION),
+    : estado(ANALIZANDO), fase(EXPLORANDO),
+      tipo_movimiento(AVANCE_EXPLORACION),
       sensor_frente(TRIG_ADELANTE, ECHO_ADELANTE),
       sensor_izquierdo(TRIG_IZQ, ECHO_IZQ),
       sensor_derecho(TRIG_DER, ECHO_DER),
       x(5), y(5), inicio_x(5), inicio_y(5), meta_x(0), meta_y(0),
-      destino_x(5), destino_y(5),
-      rumbo_celda(0), rumbo_destino(0), profundidad(0), celdas_unicas(1),
+      destino_x(5), destino_y(5), rumbo_celda(0), rumbo_destino(0),
+      profundidad(0), celdas_unicas(1),
       longitud_ruta_meta(0), indice_ruta(0), numero_casilla(1),
-      colores_detectados(0), meta_encontrada(false),
+      marcadores_azules_detectados(0), marcadores_naranjas_detectados(0),
+      meta_encontrada(false),
       inicio_movimiento(0), inicio_giro(0), tiempo_limite_giro(0),
       inicio_pausa(0), inicio_espera_analisis(0),
       inicio_retroceso_obstaculo(0), duracion_retroceso_obstaculo(0),
       tiempo_ultima_lectura(0),
+      lecturas_inclinacion_altas(0), lecturas_pared_frente(0),
+      lecturas_ir_activas(0), lecturas_ir_libres(0),
+      distancia_frente_actual(999.0), nodo_detectado_actual(false),
+      speedbump_detectado(false),
+      color_pendiente_casilla(false),
+      color_casilla(ColorDetectado::NINGUNO),
       regreso_obstaculo_pendiente(false) {
     memset(celdas_visitadas, 0, sizeof(celdas_visitadas));
     memset(salidas_abiertas, 0, sizeof(salidas_abiertas));
@@ -131,8 +118,6 @@ void Pista1::begin(RobotManager &robot) {
     numero_casilla = 1;
     celdas_visitadas[y][x] = 1;
     robot.oled.setCasilla(numero_casilla);
-    robot.fijarRumbo(robot.getRumbo());
-
     Serial.println(F("Exploracion de laberinto inicializada."));
     estado = ANALIZANDO;
 }
@@ -143,7 +128,7 @@ bool Pista1::dentroDelMapa(int8_t cx, int8_t cy) const {
 }
 
 bool Pista1::salidaAbierta(float distancia, float umbral) const {
-    return distancia >= umbral;
+    return distancia > umbral;
 }
 
 void Pista1::registrarSalida(int8_t cx, int8_t cy, uint8_t direccion, bool abierta) {
@@ -216,13 +201,53 @@ void Pista1::analizarCasilla(RobotManager &robot) {
             return;
         }
 
+        Serial.print(F("Salida elegida: "));
+        Serial.println(direccion == rumbo_celda ? F("frente") :
+                       direccion == ((rumbo_celda + 1U) & 3U) ? F("izquierda") :
+                       F("derecha"));
         iniciarMovimiento(robot, direccion, AVANCE_EXPLORACION);
         return;
     }
 
     if (profundidad > 0) {
         uint8_t direccion = (uint8_t)((historial_direccion[profundidad - 1] + 2U) & 3U);
+        Serial.println(F("Callejon: sin salidas nuevas; regreso por la ruta explorada."));
         iniciarMovimiento(robot, direccion, RETORNO_EXPLORACION);
+        return;
+    }
+
+    if (!meta_encontrada || !calcularRutaMeta()) {
+        robot.drive.detener();
+        estado = SIN_RUTA;
+        Serial.println(F("Exploracion completa; no se encontro ruta a la meta roja."));
+        return;
+    }
+
+    fase = YENDO_A_META;
+    indice_ruta = 0;
+    Serial.print(F("Exploracion completa: "));
+    Serial.print(celdas_unicas);
+    Serial.println(F(" celdas. Ruta final calculada."));
+    iniciarSiguienteTramoRuta(robot);
+}
+
+void Pista1::continuarPasillo(RobotManager &robot) {
+    const float frente = medirFiltrado(sensor_frente);
+    const bool abierto = salidaAbierta(frente, UMBRAL_PARED_FRENTE_CM);
+    registrarSalida(x, y, rumbo_celda, abierto);
+
+    const int8_t siguiente_x = x + cambioX(rumbo_celda);
+    const int8_t siguiente_y = y + cambioY(rumbo_celda);
+    if (abierto && dentroDelMapa(siguiente_x, siguiente_y) &&
+        !celdas_visitadas[siguiente_y][siguiente_x]) {
+        iniciarMovimiento(robot, rumbo_celda, AVANCE_EXPLORACION);
+        return;
+    }
+
+    if (profundidad > 0) {
+        const uint8_t regreso = (historial_direccion[profundidad - 1] + 2U) & 3U;
+        Serial.println(F("Pasillo sin salida nueva; regreso por DFS."));
+        iniciarMovimiento(robot, regreso, RETORNO_EXPLORACION);
         return;
     }
 
@@ -365,6 +390,10 @@ void Pista1::iniciarMovimiento(RobotManager &robot, uint8_t direccion,
     if (diferencia < -2) diferencia += 4;
 
     if (diferencia != 0) {
+        Serial.print(F("Giro solicitado: "));
+        Serial.print((int)diferencia * 90);
+        Serial.print(F(" grados desde rumbo "));
+        Serial.println(robot.getRumbo(), 1);
         inicio_giro = millis();
         tiempo_limite_giro = abs(diferencia) == 2 ? 15000UL : 8000UL;
         robot.girarRelativo((float)diferencia * 90.0);
@@ -393,6 +422,13 @@ void Pista1::iniciarAvance(RobotManager &robot) {
 
     inicio_movimiento = millis();
     tiempo_ultima_lectura = inicio_movimiento;
+    lecturas_inclinacion_altas = 0;
+    lecturas_pared_frente = 0;
+    lecturas_ir_activas = 0;
+    lecturas_ir_libres = 0;
+    distancia_frente_actual = 999.0;
+    nodo_detectado_actual = false;
+    speedbump_detectado = false;
     estado = AVANZANDO;
 }
 
@@ -401,6 +437,8 @@ void Pista1::completarMovimiento(RobotManager &robot) {
     x = destino_x;
     y = destino_y;
     celdas_visitadas[y][x] = 1;
+    color_casilla = robot.getColor();
+    color_pendiente_casilla = true;
 
     if (tipo_movimiento == AVANCE_EXPLORACION) {
         if (profundidad >= PROFUNDIDAD_MAXIMA) {
@@ -429,60 +467,41 @@ void Pista1::completarMovimiento(RobotManager &robot) {
         Serial.println(F("Regreso a la ultima bifurcacion."));
     } else if (tipo_movimiento == RUTA_A_META) {
         indice_ruta++;
-        if (x == meta_x && y == meta_y) {
-            robot.oled.mostrarEventoColor(F("ROJO"), false);
-            inicio_pausa = millis();
-            estado = PAUSA_META_FINAL;
-            Serial.println(F("Meta alcanzada. Iniciando regreso por la misma ruta."));
-            return;
-        }
     } else if (tipo_movimiento == RUTA_A_INICIO) {
         if (indice_ruta > 0) indice_ruta--;
-        if (indice_ruta == 0) {
-            estado = META;
-            Serial.println(F("Regreso al inicio completado."));
-            return;
-        }
     }
 
     inicio_espera_analisis = millis();
     estado = ESPERA_ANALISIS;
-
-    if (fase != EXPLORANDO) {
-        iniciarSiguienteTramoRuta(robot);
-    }
 }
 
 void Pista1::procesarColor(RobotManager &robot, ColorDetectado color) {
-    uint8_t indice_color = (uint8_t)color;
-    uint16_t mascara_color = (uint16_t)(1U << indice_color);
-    if (colores_detectados & mascara_color) return;
-
     if (color == ColorDetectado::ROJO) {
-        if (!meta_encontrada && fase == EXPLORANDO) {
-            meta_encontrada = true;
-            if (estado == AVANZANDO) {
-                meta_x = destino_x;
-                meta_y = destino_y;
-            } else {
-                meta_x = x;
-                meta_y = y;
-            }
-            Serial.print(F("Meta roja registrada en ("));
-            Serial.print(meta_x);
-            Serial.print(',');
-            Serial.print(meta_y);
-            Serial.println(')');
-        }
-    } else if (!esColorMarcador(color)) {
+        if (meta_encontrada || fase != EXPLORANDO) return;
+        meta_encontrada = true;
+        meta_x = x;
+        meta_y = y;
+        Serial.print(F("Meta roja registrada en ("));
+        Serial.print(meta_x);
+        Serial.print(',');
+        Serial.print(meta_y);
+        Serial.println(')');
+    } else if (color == ColorDetectado::AZUL) {
+        if (marcadores_azules_detectados >= 2) return;
+        marcadores_azules_detectados++;
+        Serial.print(F("Marcador azul "));
+        Serial.print(marcadores_azules_detectados);
+        Serial.println(F(" de 2."));
+    } else if (color == ColorDetectado::NARANJA) {
+        if (marcadores_naranjas_detectados >= 2) return;
+        marcadores_naranjas_detectados++;
+        Serial.print(F("Marcador naranja "));
+        Serial.print(marcadores_naranjas_detectados);
+        Serial.println(F(" de 2."));
+    } else {
         return;
     }
 
-    colores_detectados |= mascara_color;
-    robot.drive.detener();
-    estado_antes_pausa = estado;
-    estado = PAUSA_COLOR;
-    inicio_pausa = millis();
     robot.oled.mostrarEventoColor(ColorSensorComponent::nombre(color), false);
 
     Serial.print(F("Color detectado: "));
@@ -492,28 +511,6 @@ void Pista1::procesarColor(RobotManager &robot, ColorDetectado color) {
 void Pista1::periodic(RobotManager &robot) {
     if (estado == META || estado == SIN_RUTA) {
         robot.drive.detener();
-        return;
-    }
-
-    if (robot.colorCambio()) {
-        procesarColor(robot, robot.getColor());
-        if (estado == PAUSA_COLOR) return;
-    }
-
-    if (estado == PAUSA_COLOR) {
-        robot.drive.detener();
-        if (millis() - inicio_pausa >= TIEMPO_PAUSA_COLOR_MS) {
-            unsigned long pausa = millis() - inicio_pausa;
-            if (estado_antes_pausa == AVANZANDO) {
-                inicio_movimiento += pausa;
-                tiempo_ultima_lectura += pausa;
-            } else if (estado_antes_pausa == GIRANDO) {
-                inicio_giro += pausa;
-            } else if (estado_antes_pausa == RETROCEDIENDO_OBSTACULO) {
-                inicio_retroceso_obstaculo += pausa;
-            }
-            estado = estado_antes_pausa;
-        }
         return;
     }
 
@@ -538,13 +535,13 @@ void Pista1::periodic(RobotManager &robot) {
                 Serial.println(F("Ruta final bloqueada; robot detenido."));
                 return;
             }
-            inicio_espera_analisis = ahora;
+            inicio_espera_analisis = millis();
             estado = ESPERA_ANALISIS;
             return;
         }
 
-        avanzarConCorreccion(robot, transcurrido,
-                             duracion_retroceso_obstaculo, false);
+        avanzarUnidad(robot, transcurrido,
+                      duracion_retroceso_obstaculo);
         return;
     }
 
@@ -556,7 +553,18 @@ void Pista1::periodic(RobotManager &robot) {
     }
 
     if (estado == ANALIZANDO) {
-        if (fase == EXPLORANDO) analizarCasilla(robot);
+        if (color_pendiente_casilla) {
+            color_pendiente_casilla = false;
+            procesarColor(robot, color_casilla);
+        }
+
+        if (fase == EXPLORANDO) {
+            if (nodo_detectado_actual) {
+                analizarCasilla(robot);
+            } else {
+                continuarPasillo(robot);
+            }
+        }
         else iniciarSiguienteTramoRuta(robot);
         return;
     }
@@ -583,18 +591,50 @@ void Pista1::periodic(RobotManager &robot) {
         return;
     }
 
+    if (estado == CONFIRMANDO_NODO) {
+        if (robot.irPiso2.detecta()) {
+            if (lecturas_ir_activas < LECTURAS_IR_CONFIRMACION)
+                lecturas_ir_activas++;
+        } else if (lecturas_ir_libres < LECTURAS_IR_CONFIRMACION) {
+            lecturas_ir_libres++;
+        }
+
+        if (lecturas_ir_activas + lecturas_ir_libres >=
+            LECTURAS_IR_CONFIRMACION) {
+            nodo_detectado_actual =
+                lecturas_ir_activas >= LECTURAS_IR_CONFIRMACION - 1;
+            if (nodo_detectado_actual) {
+                Serial.println(F("Nodo detectado con infrarrojo pin 43."));
+            } else {
+                Serial.println(F("Sin nodo IR; continuo recto por el pasillo."));
+            }
+            completarMovimiento(robot);
+        }
+        return;
+    }
+
     unsigned long ahora = millis();
     if (ahora - inicio_movimiento >= TIEMPO_MAXIMO_CASILLA_MS) {
         registrarSalida(x, y, rumbo_celda, false);
         robot.drive.detener();
         iniciarRetornoPorObstaculo(robot, ahora);
+        Serial.println(F("No se detecto nodo IR dentro del limite de avance."));
         return;
     }
 
     if (ahora - tiempo_ultima_lectura >= INTERVALO_ULTRASONICO_MS) {
         tiempo_ultima_lectura = ahora;
-        float frente = medirFiltrado(sensor_frente);
-        if (frente > 0.0 && frente <= DISTANCIA_SEGURIDAD_CM) {
+        distancia_frente_actual = medirFrenteEnMovimiento(sensor_frente);
+
+        if (distancia_frente_actual <= DISTANCIA_SEGURIDAD_CM) {
+            if (lecturas_pared_frente < 255) {
+                lecturas_pared_frente++;
+            }
+        } else {
+            lecturas_pared_frente = 0;
+        }
+
+        if (lecturas_pared_frente >= LECTURAS_PARED_CONFIRMACION) {
             registrarSalida(x, y, rumbo_celda, false);
             robot.drive.detener();
             iniciarRetornoPorObstaculo(robot, ahora);
@@ -603,9 +643,30 @@ void Pista1::periodic(RobotManager &robot) {
     }
 
     const unsigned long transcurrido = ahora - inicio_movimiento;
-    avanzarConCorreccion(robot, transcurrido, TIEMPO_CASILLA_MS, true);
-
-    if (transcurrido >= TIEMPO_CASILLA_MS) {
-        completarMovimiento(robot);
+    float inclinacion_grados = 0.0;
+    const bool inclinacion_disponible =
+        robot.mpu.getInclinacionGrados(inclinacion_grados);
+    if (!speedbump_detectado && inclinacion_disponible &&
+        fabs(inclinacion_grados) >= INCLINACION_UMBRAL_SPEEDBUMP_GRADOS) {
+        if (lecturas_inclinacion_altas < LECTURAS_SPEEDBUMP_CONFIRMACION)
+            lecturas_inclinacion_altas++;
+        if (lecturas_inclinacion_altas >= LECTURAS_SPEEDBUMP_CONFIRMACION) {
+            speedbump_detectado = true;
+            Serial.println(F("Speedbump detectado; continuo sin correccion de rumbo."));
+        }
+    } else if (!inclinacion_disponible ||
+               fabs(inclinacion_grados) <
+                   INCLINACION_UMBRAL_SPEEDBUMP_GRADOS) {
+        lecturas_inclinacion_altas = 0;
     }
+
+    if (transcurrido >= TIEMPO_UNIDAD_MS) {
+        robot.drive.detener();
+        lecturas_ir_activas = 0;
+        lecturas_ir_libres = 0;
+        estado = CONFIRMANDO_NODO;
+        return;
+    }
+
+    avanzarUnidad(robot, transcurrido, TIEMPO_UNIDAD_MS);
 }

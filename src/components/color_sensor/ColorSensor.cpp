@@ -2,8 +2,9 @@
 #include "constants/colorConfig.h"
 #include "constants/i2cConfig.h"
 
-ColorSensorComponent::ColorSensorComponent(byte addr)
-    : tcs(COLOR_TIEMPO_INTEGRACION, COLOR_GANANCIA), address(addr) {
+ColorSensorComponent::ColorSensorComponent(byte addr, byte i2c_channel)
+    : tcs(COLOR_TIEMPO_INTEGRACION, COLOR_GANANCIA),
+      address(addr), channel(i2c_channel) {
     rojo = 0; verde = 0; azul = 0; claro = 0;
     candidato = ColorDetectado::NINGUNO;
     confirmado = ColorDetectado::NINGUNO;
@@ -12,7 +13,7 @@ ColorSensorComponent::ColorSensorComponent(byte addr)
 }
 
 bool ColorSensorComponent::begin() {
-    seleccionarCanalI2C(COLOR_SENSOR_I2C_CHANNEL);
+    seleccionarCanalI2C(channel);
     disponible = tcs.begin(address, &Wire);
     return disponible;
 }
@@ -54,7 +55,7 @@ ColorDetectado ColorSensorComponent::clasificar(uint16_t r, uint16_t g, uint16_t
 void ColorSensorComponent::actualizar() {
     if (!disponible) return;
 
-    seleccionarCanalI2C(COLOR_SENSOR_I2C_CHANNEL);
+    seleccionarCanalI2C(channel);
     tcs.getRawData(&rojo, &verde, &azul, &claro);
 
     ColorDetectado crudo = clasificar(rojo, verde, azul, claro);

@@ -15,10 +15,11 @@ const bool CALIBRAR_GIRO_AL_INICIO = false;
 const int MUESTRAS_CALIBRACION_GIRO = 500;
 
 //ajuste de velocidad lado derecho
-const float MULTIPLICADOR_LADO_DERECHO = 0.90;
+const float MULTIPLICADOR_LADO_DERECHO = 0.87;
 
 //debug pid por serial
 const bool PID_DEBUG_SERIAL = true;
+
 
 //invertir strafe si hace falta
 const int STRAFE_SIGNO = 1;
@@ -31,7 +32,7 @@ const int STRAFE_SIGNO = 1;
   const float KI = 0.34;
   const float KD = 0.025;
 
-  const int VELOCIDAD_MAXIMA = 50;
+  const int VELOCIDAD_MAXIMA = 75;
   const int VELOCIDAD_MINIMA = 24;
 
   const float TOLERANCIA_GRADOS = 2.0;

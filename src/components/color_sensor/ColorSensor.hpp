@@ -22,6 +22,7 @@ class ColorSensorComponent {
 private:
     Adafruit_TCS34725 tcs;
     byte address;
+    byte channel;
 
     uint16_t rojo, verde, azul, claro;
 
@@ -33,7 +34,7 @@ private:
     ColorDetectado clasificar(uint16_t r, uint16_t g, uint16_t b, uint16_t c) const;
 
 public:
-    ColorSensorComponent(byte addr);
+    ColorSensorComponent(byte addr, byte i2c_channel = 2);
     bool begin();
     void actualizar();
 

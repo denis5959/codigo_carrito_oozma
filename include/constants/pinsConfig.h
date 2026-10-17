@@ -19,11 +19,7 @@ const int IN3_TRA_IZQ = 24;
 const int IN4_TRA_IZQ = 25;
 const int ENB_TRA_IZQ = 3; //pwm
 
-#if defined(PISTA_A)
 const int IR_PISO_1 = 42;
-#else
-const int IR_PISO_1 = 44;
-#endif
 const int IR_PISO_2 = 43;
 
 #if defined(PISTA_A)
@@ -45,9 +41,9 @@ const int ECHO_DER = 47;
   const bool INV_TRA_DER = false;
   const bool INV_TRA_IZQ = false;
 #elif defined(CHASIS_MECANUM)
-  const bool INV_DEL_DER = false;
+  const bool INV_DEL_DER = true;
   const bool INV_DEL_IZQ = false;
-  const bool INV_TRA_DER = false;
+  const bool INV_TRA_DER = true;
   const bool INV_TRA_IZQ = false;
 #else
   #error "Elige un environment: pista_a_tanque o pista_b_mecanum"
