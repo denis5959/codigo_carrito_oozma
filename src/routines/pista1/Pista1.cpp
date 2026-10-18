@@ -5,6 +5,8 @@
 
 namespace {
 const float DISTANCIA_SEGURIDAD_CM = 18.0;
+const float DISTANCIA_UNIDAD_CM = 30.0;
+const float MARGEN_SEGURIDAD_UNIDAD_CM = 8.0;
 const float UMBRAL_PARED_FRENTE_CM = 20.0;
 const float UMBRAL_PARED_LADO_CM = 12.0;
 const uint8_t LECTURAS_PARED_CONFIRMACION = 2;
@@ -89,8 +91,9 @@ Pista1::Pista1()
       tiempo_ultima_lectura(0),
       lecturas_inclinacion_altas(0), lecturas_pared_frente(0),
       lecturas_ir_activas(0), lecturas_ir_libres(0),
-      distancia_frente_actual(999.0), nodo_detectado_actual(false),
-      speedbump_detectado(false),
+      distancia_frente_actual(999.0), distancia_inicio_avance(0.0),
+      lecturas_objetivo_distancia(0), nodo_detectado_actual(false),
+      speedbump_detectado(false), avance_por_distancia(false),
       color_pendiente_casilla(false),
       color_casilla(ColorDetectado::NINGUNO),
       regreso_obstaculo_pendiente(false) {
@@ -420,6 +423,24 @@ void Pista1::iniciarAvance(RobotManager &robot) {
     robot.drive.detener();
     rumbo_celda = rumbo_destino;
 
+    distancia_inicio_avance = sensor_frente.medirCm(18000UL);
+    avance_por_distancia =
+        distancia_inicio_avance >
+        DISTANCIA_SEGURIDAD_CM + DISTANCIA_UNIDAD_CM +
+            MARGEN_SEGURIDAD_UNIDAD_CM;
+    lecturas_objetivo_distancia = 0;
+    if (avance_por_distancia) {
+        Serial.print(F("Avance por distancia: inicio "));
+        Serial.print(distancia_inicio_avance, 1);
+        Serial.print(F(" cm; objetivo "));
+        Serial.print(distancia_inicio_avance - DISTANCIA_UNIDAD_CM, 1);
+        Serial.println(F(" cm."));
+    } else {
+        Serial.print(F("Sin margen frontal suficiente para medir 30 cm ("));
+        Serial.print(distancia_inicio_avance, 1);
+        Serial.println(F(" cm); uso avance temporizado de 1100 ms."));
+    }
+
     inicio_movimiento = millis();
     tiempo_ultima_lectura = inicio_movimiento;
     lecturas_inclinacion_altas = 0;
@@ -626,6 +647,16 @@ void Pista1::periodic(RobotManager &robot) {
         tiempo_ultima_lectura = ahora;
         distancia_frente_actual = medirFrenteEnMovimiento(sensor_frente);
 
+        if (avance_por_distancia &&
+            distancia_frente_actual > 0.0 &&
+            distancia_frente_actual <=
+                distancia_inicio_avance - DISTANCIA_UNIDAD_CM) {
+            if (lecturas_objetivo_distancia < LECTURAS_PARED_CONFIRMACION)
+                lecturas_objetivo_distancia++;
+        } else {
+            lecturas_objetivo_distancia = 0;
+        }
+
         if (distancia_frente_actual <= DISTANCIA_SEGURIDAD_CM) {
             if (lecturas_pared_frente < 255) {
                 lecturas_pared_frente++;
@@ -660,13 +691,24 @@ void Pista1::periodic(RobotManager &robot) {
         lecturas_inclinacion_altas = 0;
     }
 
-    if (transcurrido >= TIEMPO_UNIDAD_MS) {
+    const bool objetivo_distancia_alcanzado =
+        avance_por_distancia &&
+        lecturas_objetivo_distancia >= LECTURAS_PARED_CONFIRMACION;
+    if (objetivo_distancia_alcanzado ||
+        (!avance_por_distancia && transcurrido >= TIEMPO_UNIDAD_MS)) {
         robot.drive.detener();
+        if (objetivo_distancia_alcanzado) {
+            Serial.print(F("Unidad completa: distancia frontal "));
+            Serial.print(distancia_frente_actual, 1);
+            Serial.println(F(" cm."));
+        }
         lecturas_ir_activas = 0;
         lecturas_ir_libres = 0;
         estado = CONFIRMANDO_NODO;
         return;
     }
 
-    avanzarUnidad(robot, transcurrido, TIEMPO_UNIDAD_MS);
+    const unsigned long duracion_maxima =
+        avance_por_distancia ? TIEMPO_MAXIMO_CASILLA_MS : TIEMPO_UNIDAD_MS;
+    avanzarUnidad(robot, transcurrido, duracion_maxima);
 }

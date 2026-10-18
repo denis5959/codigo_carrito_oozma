@@ -22,6 +22,9 @@ public:
     void setTitulo(const __FlashStringHelper *nuevo_titulo);
     void setCasilla(uint16_t casilla);
     void mostrarEstado(float rumbo_actual, float objetivo, float vel_z, const __FlashStringHelper *color);
+    void mostrarEstadoPistaB(const __FlashStringHelper *parte,
+                             const __FlashStringHelper *color_1,
+                             const __FlashStringHelper *color_2);
     void mostrarEventoColor(const __FlashStringHelper *color, bool es_meta);
     void mostrarError(const __FlashStringHelper *mensaje);
     void mostrarInicio();

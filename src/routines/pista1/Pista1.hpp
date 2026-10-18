@@ -84,8 +84,11 @@ private:
     uint8_t lecturas_ir_activas;
     uint8_t lecturas_ir_libres;
     float distancia_frente_actual;
+    float distancia_inicio_avance;
+    uint8_t lecturas_objetivo_distancia;
     bool nodo_detectado_actual;
     bool speedbump_detectado;
+    bool avance_por_distancia;
     bool color_pendiente_casilla;
     ColorDetectado color_casilla;
     bool regreso_obstaculo_pendiente;

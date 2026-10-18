@@ -44,9 +44,9 @@ void Drive::girarSobreEje(int velocidad) {
     del_izq.set(-velocidad);
     tra_izq.set(velocidad);
 #else
-    del_der.set(velocidad);
-    tra_der.set(-velocidad);
+    del_der.set(-velocidad);
     del_izq.set(-velocidad);
+    tra_der.set(velocidad);
     tra_izq.set(velocidad);
 #endif
 }
@@ -82,10 +82,10 @@ void Drive::mover(int vx, int vy, int giro) {
     }
 
 #if defined(PISTA_B)
-    const float fl = vx - vy - giro;
+    const float fl = vx - vy + giro;
     const float fr = -vx - vy + giro;
     const float rl = vx - vy + giro;
-    const float rr = -vx - vy - giro;
+    const float rr = -vx - vy + giro;
 #else
     const float lateral = (float)vy * STRAFE_SIGNO;
 

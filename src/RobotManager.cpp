@@ -110,11 +110,13 @@ void RobotManager::terminarCiclo() {
         }
     }
 
+#if defined(PISTA_A)
     if (millis() - tiempo_anterior_oled >= 100) {
         tiempo_anterior_oled = millis();
         oled.mostrarEstado(mpu.getAnguloZ(), angulo_objetivo, mpu.getVelocidadZ(),
                            ColorSensorComponent::nombre(colorSensor.getColor()));
     }
+#endif
 
     delay(20);
 }
@@ -166,10 +168,10 @@ void RobotManager::controlarRumbo() {
         salida = (salida >= 0) ? VELOCIDAD_MINIMA : -VELOCIDAD_MINIMA;
     }
 
-#if defined(PISTA_A)
-    drive.girarSobreEje(-(int)salida);
+#if defined(PISTA_B)
+    drive.girarSobreEje(SIGNO_GIRO_MECANUM * (int)salida);
 #else
-    drive.girarSobreEje((int)salida);
+    drive.girarSobreEje(-(int)salida);
 #endif
 }
 

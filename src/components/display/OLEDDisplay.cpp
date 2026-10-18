@@ -97,6 +97,31 @@ void OLEDDisplayComponent::mostrarEstado(float rumbo_actual, float objetivo, flo
     display.display();
 }
 
+void OLEDDisplayComponent::mostrarEstadoPistaB(
+    const __FlashStringHelper *parte,
+    const __FlashStringHelper *color_1,
+    const __FlashStringHelper *color_2) {
+    if (!disponible) return;
+
+    seleccionarCanalI2C(OLED_I2C_CHANNEL);
+    display.clearDisplay();
+    display.setTextColor(SSD1306_WHITE);
+    display.setTextSize(1);
+    display.setCursor(0, 0);
+    display.println(F("PISTA B MECANUM"));
+    display.drawLine(0, 11, 127, 11, SSD1306_WHITE);
+    display.setCursor(0, 18);
+    display.print(F("Parte: "));
+    display.println(parte);
+    display.setCursor(0, 34);
+    display.print(F("Sensor 1: "));
+    display.println(color_1);
+    display.setCursor(0, 48);
+    display.print(F("Sensor 2: "));
+    display.println(color_2);
+    display.display();
+}
+
 void OLEDDisplayComponent::mostrarEventoColor(const __FlashStringHelper *color, bool es_meta) {
     ultimo_color = color;
     evento_meta = es_meta;

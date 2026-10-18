@@ -42,15 +42,16 @@ const int STRAFE_SIGNO = 1;
   #define NOMBRE_PISTA "PISTA B MECANUM"
   const bool ES_MECANUM = true;
 
-  const float KP = 7.0;
-  const float KI = 0.36;
-  const float KD = 0.03;
+  const float KP = 2.0;
+  const float KI = 0.;
+  const float KD = 0;
 
-  const int VELOCIDAD_MAXIMA = 130;
-  const int VELOCIDAD_MINIMA = 55;
+  const int VELOCIDAD_MAXIMA = 48;
+  const int VELOCIDAD_MINIMA = 30;
 
-  const float TOLERANCIA_GRADOS = 2.0;
-  const float ZONA_FRENADO_GRADOS = 12.0;
+  const float TOLERANCIA_GRADOS = 6.0;
+  const float ZONA_FRENADO_GRADOS = 24.0;
+  const int SIGNO_GIRO_MECANUM = -1;
 
   const int VELOCIDAD_STRAFE = 100; //pwm derecha
   const int CORRECCION_MAXIMA_GIRO = 40; //limite giro
